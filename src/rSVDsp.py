@@ -47,7 +47,12 @@ import h5py
 #     return U, S, V
 
 def rSVDsp(A, k, b=10):
-
+    """
+    Description: Single-pass Randomized Blocked SVD From Yu et al (2017)
+    
+    Notes: 1. Each row in the input matrix A represents the data from one time step
+           2. The entire matrix A is read without streaming
+    """
     m, n = np.shape(A)
     os = 10
     if n <= k:
@@ -93,7 +98,12 @@ def rSVDsp(A, k, b=10):
     return U, S, V
 
 def rSVDsp_streaming(A, k, b=10):
-
+    """
+    Description: Single-pass Randomized Blocked SVD From Yu et al (2017) with streaming input
+    
+    Notes: 1. Each row in the input matrix A represents the data from one time step
+           2. The matrix A is read row by row 
+    """
     m, n = np.shape(A)
     os = 10
     if n <= k:
@@ -149,7 +159,13 @@ def rSVDsp_streaming(A, k, b=10):
     return U, S, V
 
 def rSVDsp_unblock_streaming(A, k):
-
+    """
+    Description: Modified from the Single-pass Randomized Blocked SVD From Yu et al (2017)
+    
+    Notes: 1. Each row in the input matrix A represents the data from one time step
+           2. The matrix A is read row by row 
+           3. The SVD is performed in the un-block way
+    """
     m, n = np.shape(A)
     os = 10
     if n <= k:
@@ -216,6 +232,10 @@ def rSVDsp_unblock(A, k):
     return U, S, V
 
 def truncateSVD(A, k):
+    """
+    Description: Truncated SVD to get the low rank approximation of A with rank k
+    
+    """
     U, S, V = np.linalg.svd(A)
     U = U[:, range(k)]
     V = V[range(k),:]
@@ -224,6 +244,16 @@ def truncateSVD(A, k):
     return U, S, V
 
 def SVD_update_adaptive(A, k, blockSize_ini, blockSize_add):
+
+    """
+    Description: Adaptive SVD updating implementation (streaming)
+
+    Note: 1. Each COLUMN of the input matrix A represents the data from one time step
+          2. The first blockSize_ini column of A is read to get an initial low-rank approximation with rank k 
+          3. The SVD updating then read every blockSize_add columns of A and update the SVD 
+    
+    """
+
     m, n = np.shape(A)
     
     nBlocks_add = np.ceil((n-blockSize_ini)/blockSize_add).astype(int)
@@ -284,6 +314,10 @@ def SVD_update_adaptive(A, k, blockSize_ini, blockSize_add):
     return Ub, Sb, Vb
 
 def SVD_update_adaptive_sketch(A, k, blockSize_ini, blockSize_add):
+    """
+    Description: Adaptive SVD updating combined with sketching (NOT finished yet)
+    
+    """
     m, n = np.shape(A)
     
     nBlocks_add = np.ceil((n-blockSize_ini)/blockSize_add).astype(int)
