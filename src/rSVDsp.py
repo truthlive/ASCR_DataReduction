@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
 import numpy as np
 import matplotlib as plt
 import time
 import h5py
+from numpy.random import default_rng
+import scipy.linalg
 
 # def rSVDsp(A, k, b=10):
 
@@ -46,7 +49,7 @@ import h5py
 
 #     return U, S, V
 
-def rSVDsp(A, k, b=10):
+def rSVDsp(A, k, b=10, rng = default_rng() ):
     """
     Description: Single-pass Randomized Blocked SVD From Yu et al (2017)
     
@@ -60,7 +63,7 @@ def rSVDsp(A, k, b=10):
     k = k + os
 
     # np.random.seed(42)
-    Omg = np.random.randn(n,k)
+    Omg = rng.standard_normal( size=(n,k))
     G = A @ Omg
     H = A.T @ G
     Q = np.zeros((m, 0))
@@ -75,12 +78,11 @@ def rSVDsp(A, k, b=10):
         Qi, Rit= np.linalg.qr(Qi-Q@(Q.T@Qi))
         Ri = Rit@ Ri
         Bi = Ri.T 
-
         
         # Bi,_,_,_ = np.linalg.lstsq(Ri.T, H[:, range(i*b, (i+1)*b)].T-Yi.T@Q@B-temp.T@B)
         # Bi = np.linalg.solve(Ri.T, H[:, range(i*b, (i+1)*b)].T-np.dot(np.dot(Yi.T,Q),B)-np.dot(temp.T,B))
-        Bi = np.linalg.inv(Ri.T)@(H[:, range(i*b, (i+1)*b)].T-Yi.T@Q@B-temp.T@B)
-
+        #Bi = np.linalg.inv(Ri.T)@(H[:, range(i*b, (i+1)*b)].T-Yi.T@Q@B-temp.T@B)
+        Bi = scipy.linalg.solve_triangular( Ri,  H[:, range(i*b, (i+1)*b)].T-Yi.T@Q@B-temp.T@B  , trans='T')
 
 
         Q = np.hstack((Q, Qi))
@@ -97,7 +99,7 @@ def rSVDsp(A, k, b=10):
 
     return U, S, V
 
-def rSVDsp_streaming(A, k, b=10):
+def rSVDsp_streaming(A, k, b=10, rng = default_rng() ):
     """
     Description: Single-pass Randomized Blocked SVD From Yu et al (2017) with streaming input
     
@@ -111,7 +113,7 @@ def rSVDsp_streaming(A, k, b=10):
     k = k + os
 
     # np.random.seed(42)
-    Omg = np.random.randn(n,k)
+    Omg = rng.standard_normal( size=(n,k))
 
     G = np.zeros((0,k))
     H = np.zeros((n,k))
@@ -135,13 +137,12 @@ def rSVDsp_streaming(A, k, b=10):
         Qi, Ri = np.linalg.qr(Yi)
         Qi, Rit= np.linalg.qr(Qi-Q@(Q.T@Qi))
         Ri = Rit@ Ri
-        Bi = Ri.T 
+        #Bi = Ri.T 
 
         
         # Bi,_,_,_ = np.linalg.lstsq(Ri.T, H[:, range(i*b, (i+1)*b)].T-Yi.T@Q@B-temp.T@B)
         # Bi = np.linalg.solve(Ri.T, H[:, range(i*b, (i+1)*b)].T-np.dot(np.dot(Yi.T,Q),B)-np.dot(temp.T,B))
         Bi = np.linalg.inv(Ri.T)@(H[:, range(i*b, (i+1)*b)].T-Yi.T@Q@B-temp.T@B)
-
 
 
         Q = np.hstack((Q, Qi))
@@ -158,7 +159,7 @@ def rSVDsp_streaming(A, k, b=10):
 
     return U, S, V
 
-def rSVDsp_unblock_streaming(A, k):
+def rSVDsp_unblock_streaming(A, k, rng = default_rng() ):
     """
     Description: Modified from the Single-pass Randomized Blocked SVD From Yu et al (2017)
     
@@ -173,7 +174,7 @@ def rSVDsp_unblock_streaming(A, k):
     k = k + os
 
     # np.random.seed(42)
-    Omg = np.random.randn(n,k)
+    Omg = rng.standard_normal( size=(n,k))
 
     G = np.zeros((0,k))
     H = np.zeros((n,k))
@@ -192,7 +193,11 @@ def rSVDsp_unblock_streaming(A, k):
     # B = np.linalg.solve(R.T, H.T)
     # B, _, _, _ = np.linalg.lstsq(R.T, H.T, rcond=None)
 
-    B = H @ np.linalg.pinv(R)
+    roughConditionNumber = R[0,0] / R[-1,-1]
+    if roughConditionNumber > 1e8:
+        B = H @ np.linalg.pinv(R) # regularizes a bit...  
+    else:
+        B = scipy.linalg.solve_triangular( R, H.T, trans='T').T
 
     U1, S, V = np.linalg.svd(B.T, full_matrices=False)
 
@@ -206,21 +211,22 @@ def rSVDsp_unblock_streaming(A, k):
 
     return U, S, V
 
-def rSVDsp_unblock(A, k):
+def rSVDsp_unblock(A, k, rng = default_rng() ):
 
     m, n = np.shape(A)
     os = 10
     k = k + os
     # np.random.seed(42)
     
-    Omg = np.random.randn(n,k)
+    Omg = rng.standard_normal( size=(n,k))
 
     Y = A@Omg
-    B = A.T@Y
+    D = A.T@Y
     Q, R = np.linalg.qr(Y)
-    B = B @ np.linalg.inv(R)
+    B = scipy.linalg.solve_triangular( R, D.T, trans = 'T')
+    #B = ( B @ np.linalg.inv(R) ).T
 
-    U1, S, V = np.linalg.svd(B.T)
+    U1, S, V = np.linalg.svd(B)
     
     U = np.dot(Q,U1)
 
@@ -243,7 +249,7 @@ def truncateSVD(A, k):
 
     return U, S, V
 
-def SVD_update_adaptive(A, k, blockSize_ini, blockSize_add):
+def SVD_update_adaptive(A, k, blockSize_ini, blockSize_add, rng = default_rng() ):
 
     """
     Description: Adaptive SVD updating implementation (streaming)
@@ -262,7 +268,7 @@ def SVD_update_adaptive(A, k, blockSize_ini, blockSize_add):
 
     # Ub, Sb, Vb = truncateSVD(A_b_ini, k)
     
-    Vbt, Sb, Ubt = rSVDsp_unblock_streaming(A_b_ini.T, k)
+    Vbt, Sb, Ubt = rSVDsp_unblock_streaming(A_b_ini.T, k, rng = rng)
     Ub = Ubt.T
     Vb = Vbt.T
 
@@ -313,7 +319,7 @@ def SVD_update_adaptive(A, k, blockSize_ini, blockSize_add):
 
     return Ub, Sb, Vb
 
-def SVD_update_adaptive_sketch(A, k, blockSize_ini, blockSize_add):
+def SVD_update_adaptive_sketch(A, k, blockSize_ini, blockSize_add, rng = default_rng() ):
     """
     Description: Adaptive SVD updating combined with sketching (NOT finished yet)
     
@@ -326,7 +332,7 @@ def SVD_update_adaptive_sketch(A, k, blockSize_ini, blockSize_add):
 
     # Ub, Sb, Vb = truncateSVD(A_b_ini, k)
     
-    Vbt, Sb, Ubt = rSVDsp_unblock_streaming(A_b_ini.T, k)
+    Vbt, Sb, Ubt = rSVDsp_unblock_streaming(A_b_ini.T, k, rng)
     Ub = Ubt.T
     Vb = Vbt.T
 
@@ -377,13 +383,16 @@ def SVD_update_adaptive_sketch(A, k, blockSize_ini, blockSize_add):
 
     return Ub, Sb, Vb
 
-
-def main():
+def load_JHTDB_data(data_directory = '../test_JHTDB/', ntstep = 1000, nsample = 64, which_component = 'x'):
+    ''' Loads channel flow data, either x or y or z component (of velocity?)
+    The output matrix is reshaped to be nsample^2 x ntstep
+        where it seems nsample is the number of x and z grid samples (guessing that y is fixed at 256)
+        and ntstep is the number of time steps.   e.g., output is 4096 x 1000, meaning 1000 time steps
+    '''
+    import os
     # ! Load testing channel flow
-    ntstep = 1000
-    nsample = 64
 
-    fname = '../test_JHTDB/channel_x1_{ns}_y256_z1_{ns}_t{nt}.h5'.format(ns=nsample, nt =ntstep)
+    fname = os.path.join( data_directory, f'channel_x1_{nsample}_y256_z1_{nsample}_t{ntstep}.h5')
 
     # f = h5py.File("../test_JHTDB/channel_x1_64_y256_z1_64_t1000.h5")
     f=h5py.File(fname)
@@ -399,36 +408,94 @@ def main():
         else:
             X[:, i-ntstep] = f[list_key[i]]
 
+    if which_component.lower() == 'x':
+        U = U[:,:,:,:,0].squeeze()
+    elif which_component.lower() == 'y':
+        U = U[:,:,:,:,1].squeeze()
+    elif which_component.lower() == 'z':
+        U = U[:,:,:,:,2].squeeze()
+    else:
+        raise ValueError
 
-    Ux = U[:,:,:,:,0].squeeze()
-    Uy = U[:,:,:,:,1].squeeze()
-    Uz = U[:,:,:,:,2].squeeze()
+    U_reshape = U.reshape([ntstep,-1]).T
+    U_reshape = np.array(U_reshape,dtype=np.float64,order="F")
+    return U_reshape
 
-    Ux_reshape = Ux.reshape([ntstep,-1]).T
-    Uy_reshape = Uy.reshape([ntstep,-1]).T
-    Uz_reshape = Uz.reshape([ntstep,-1]).T
+def fastFrobeniusNorm(U,Vt,A,nrmA = None ):
+    """ computes || A - U*V ||_F using the expansion
+    || A - U*V^T ||_F^2 = 
+        ||A||^2 + ||U*V^T||^2 - 2 tr(A^T*U*V^T)
+    and then tricks like
+        || UV^T ||^2 = || tr(VU'UV') = tr(U'U V'V )
+        U and V need not have orthonormal columns.
+        This code is only efficient if U, V.T have a lot more
+        columns than rows (tall matrices).
+        Note: following numpy's svd convention, V is NOT transposed
+    """
+    if nrmA is None:
+        nrmA = np.linalg.norm(A,'fro')
+    nrm2 = nrmA**2 + np.trace( (U.T@U) @ (Vt@Vt.T) ) - 2*np.trace( (A@Vt.T).T @ U)
+    return np.sqrt( nrm2 )
 
-    Ux_reshape = np.array(Ux_reshape,dtype=np.float64,order="F")
+def main():
+    ''' Runs a simple test to see if things are working; not exhaustive test! '''
+    A = load_JHTDB_data(which_component='x')
 
-    dimReduced = 99
+    dimReduced = 50 # the "rank" of our approximation
 
     blockSize = 100
-    m, n = np.shape(Ux_reshape)
+    m, n = np.shape(A)
+    print(f'Matrix is {m} x {n}, using rank {dimReduced}')
     nBlocks = np.ceil(n/blockSize).astype(int)
 
-    t_start = time.time()
+    
     blockSize_ini = 100
     blockSize_add = 1
 
-    Ub, Sb, Vb = SVD_update_adaptive(Ux_reshape, dimReduced,blockSize_ini, blockSize_add)
+    rng = default_rng(1)  # make it reproducible (useful for checking for bugs)
+    # rng = default_rng()   # not reproducible
 
-    t_end = time.time()
-    Sb_mat_update = np.zeros((dimReduced, dimReduced))
-    np.fill_diagonal(Sb_mat_update, Sb)
-    Ux_recon_col_update = Ub@Sb_mat_update@Vb
-    norm_f = np.linalg.norm(Ux_reshape-Ux_recon_col_update,'fro')/np.linalg.norm(Ux_reshape,'fro')
+    t_start = time.time()
+    Ub, Sb, Vb = SVD_update_adaptive(A, dimReduced,blockSize_ini, blockSize_add, rng = rng)
+    Vb = Sb.reshape((-1,1))*Vb  # Python usually broadcasts the sizes correctly
+    t_end = time.time() - t_start
 
-    print('Blocked version (update basis col by col):{0} Time:{1}'.format(norm_f,t_end-t_start))
+    A_recon_col_update = Ub@Vb
+    nrmA = np.linalg.norm(A,'fro')
+
+    #norm_f = np.linalg.norm(A-A_recon_col_update,'fro')/nrmA
+    norm_f = fastFrobeniusNorm(Ub,Vb,A, nrmA)/nrmA  # efficient way
+    
+
+    print('Blocked version (update basis col by col), relative error:\t{0:.2e}, Time: {1:.4f} sec'.format(norm_f,t_end))
+
+    t_start = time.time()
+    U,S,V = rSVDsp(A, k=dimReduced, rng = rng )
+    V = S.reshape((-1,1))*V
+    t_end = time.time() - t_start
+    norm_f = fastFrobeniusNorm(U,V,A, nrmA)/nrmA
+    print('rSVDsp, relative error:\t\t\t\t\t\t{0:.2e}, Time: {1:.4f} sec'.format(norm_f,t_end))
+
+    t_start = time.time()
+    U,S,V = rSVDsp_unblock( A, k=dimReduced, rng = rng )
+    V = S.reshape((-1,1))*V
+    t_end = time.time() - t_start
+    norm_f = fastFrobeniusNorm(U,V,A, nrmA)/nrmA
+    print('rSVDsp_unblock, relative error:\t\t\t\t\t{0:.2e}, Time: {1:.4f} sec'.format(norm_f,t_end))
+
+    t_start = time.time()
+    U,S,V = rSVDsp_unblock_streaming(A, k=dimReduced, rng = rng )
+    V = S.reshape((-1,1))*V
+    t_end = time.time() - t_start
+    norm_f = fastFrobeniusNorm(U,V,A, nrmA)/nrmA
+    print('rSVDsp_unblock_streaming, relative error:\t\t\t{0:.2e}, Time: {1:.4f} sec'.format(norm_f,t_end))
+
+    t_start = time.time()
+    U,S,V = rSVDsp_streaming(A, k=dimReduced, rng = rng )
+    V = S.reshape((-1,1))*V
+    t_end = time.time() - t_start
+    norm_f = fastFrobeniusNorm(U,V,A, nrmA)/nrmA
+    print('rSVDsp_streaming, relative error:\t\t\t\t{0:.2e}, Time: {1:.4f} sec'.format(norm_f,t_end))
 
 if __name__ == "__main__":
     main()
