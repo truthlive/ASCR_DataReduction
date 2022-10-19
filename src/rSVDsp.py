@@ -99,12 +99,48 @@ def rSVDsp(A, k, b=10, rng = default_rng() ):
 
     return U, S, V
 
-def rSVDsp_streaming(A, k, b=10, rng = default_rng() ):
+
+def onepass_update(A,Omega,blockSize=1):
+    """ Computes G = A@Omega and H = A.T@G in one-pass,
+    loading in at most 'blockSize' rows of A at a time """
+    m, n = np.shape(A)
+    k = np.shape(Omega)[1]
+
+    G = np.zeros((0,k))
+    H = np.zeros((n,k))
+    
+    if blockSize == 1:
+        for row in range(m):
+            a = A[row, :].reshape((1,n))
+            g = a @ Omega
+            G = np.vstack((G, g))
+            H = H + a.T@g
+    else:
+        # New code
+        nBlocks = int( m / blockSize )
+        for j in range(nBlocks):
+            a = A[j*blockSize:(j+1)*blockSize, :] #.reshape((1,n))
+            g = a @ Omega
+            G = np.vstack((G, g))
+            H = H + a.T@g
+        if nBlocks*blockSize < m:
+            # add the stragglers
+            a = A[nBlocks*blockSize:, :] #.reshape((1,n))
+            g = a @ Omega
+            G = np.vstack((G, g))
+            H = H + a.T@g
+    
+    return G, H
+
+def rSVDsp_streaming(A, k, b=10, rng = default_rng(), blocksize_A = 1 ):
     """
     Description: Single-pass Randomized Blocked SVD From Yu et al (2017) with streaming input
     
     Notes: 1. Each row in the input matrix A represents the data from one time step
            2. The matrix A is read row by row 
+           
+    b is the blocksize used for the "blocking" in Yu et al. (for parallel computation)
+    while blocksize_A is the blocksize used for reading in rows of A for one-pass computation
     """
     m, n = np.shape(A)
     os = 10
@@ -115,14 +151,15 @@ def rSVDsp_streaming(A, k, b=10, rng = default_rng() ):
     # np.random.seed(42)
     Omg = rng.standard_normal( size=(n,k))
 
-    G = np.zeros((0,k))
-    H = np.zeros((n,k))
+#     G = np.zeros((0,k))
+#     H = np.zeros((n,k))
 
-    for row in range(m):
-        a = A[row, :].reshape((1,n))
-        g = a @ Omg
-        G = np.vstack((G, g))
-        H = H + a.T@g
+#     for row in range(m):
+#         a = A[row, :].reshape((1,n))
+#         g = a @ Omg
+#         G = np.vstack((G, g))
+#         H = H + a.T@g
+    G, H = onepass_update(A,Omg,blockSize=blocksize_A) # Added Oct 19 2022
 
     # G = A @ Omg
     # H = A.T @ G
@@ -159,13 +196,15 @@ def rSVDsp_streaming(A, k, b=10, rng = default_rng() ):
 
     return U, S, V
 
-def rSVDsp_unblock_streaming(A, k, rng = default_rng() ):
+def rSVDsp_unblock_streaming(A, k, rng = default_rng(), blocksize_A = 1  ):
     """
     Description: Modified from the Single-pass Randomized Blocked SVD From Yu et al (2017)
     
     Notes: 1. Each row in the input matrix A represents the data from one time step
            2. The matrix A is read row by row 
-           3. The SVD is performed in the un-block way
+           3. The SVD is performed not blocked
+    
+    blocksize_A is the blocksize used for reading in rows of A for one-pass computation
     """
     m, n = np.shape(A)
     os = 10
@@ -176,14 +215,15 @@ def rSVDsp_unblock_streaming(A, k, rng = default_rng() ):
     # np.random.seed(42)
     Omg = rng.standard_normal( size=(n,k))
 
-    G = np.zeros((0,k))
-    H = np.zeros((n,k))
+#     G = np.zeros((0,k))
+#     H = np.zeros((n,k))
 
-    for row in range(m):
-        a = A[row, :].reshape((1,n))
-        g = a @ Omg
-        G = np.vstack((G, g))
-        H = H + a.T@g
+#     for row in range(m):
+#         a = A[row, :].reshape((1,n))
+#         g = a @ Omg
+#         G = np.vstack((G, g))
+#         H = H + a.T@g
+    G, H = onepass_update(A,Omg,blockSize=blocksize_A) # Added Oct 19 2022
 
     # G = A @ Omg
     # H = A.T @ G
