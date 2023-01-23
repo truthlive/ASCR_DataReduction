@@ -8,7 +8,7 @@ import scipy.linalg as sli
 
 def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
     """
-    Description: Randomized ID From Voronin et al (2017)
+    Description: Randomized ID based on  Bhaskara et al. (2019)
 
     Notes: 1. Each column in the input matrix A represents the data from one time step
            2. The entire matrix A is processed col by col
