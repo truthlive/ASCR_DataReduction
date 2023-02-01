@@ -54,8 +54,8 @@ def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
             continue
         else:
             S_pre_mat = np.asarray(S_pre).T
-            b_perp_pre = b - (S_pre_mat @ np.linalg.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
-            norm_b_perp = np.linalg.norm(b_perp_pre)
+            b_perp_pre = b - (S_pre_mat @ sli.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
+            norm_b_perp = sli.norm(b_perp_pre)
             pb = k * norm_b_perp * norm_b_perp/160./xi
         
         prob_sample = np.minimum(pb, 1)
@@ -151,8 +151,8 @@ def rID_res_new(A, k, xi, rng=default_rng(), flg_random = True):
             continue
         else:
             S_pre_mat = S[:, :count_pre]
-            b_perp_pre = b - (S_pre_mat @ np.linalg.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
-            norm_b_perp = np.linalg.norm(b_perp_pre)
+            b_perp_pre = b - (S_pre_mat @ sli.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
+            norm_b_perp = sli.norm(b_perp_pre)
             # if col <=20:
             #     print(np.shape(S_pre_mat))
             #     print(norm_b_perp)
@@ -168,7 +168,7 @@ def rID_res_new(A, k, xi, rng=default_rng(), flg_random = True):
             C[count_pre + count_cur, col] = 1.0
             count_cur = count_cur + 1
         else:
-            S_pre_mat = S[:, :count_pre]
+            S_pre_mat = S[:, :count_pre+ count_cur]
             tmp_coeff, _ ,_,_= sli.lstsq(S_pre_mat,b)
             tmp_coeff = np.pad(tmp_coeff,(0,k-tmp_coeff.shape[0]))
             C[:, col] = tmp_coeff
@@ -251,8 +251,8 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
             continue
         else:
             S_pre_mat = S[:, :count_pre]
-            b_perp_pre = b - (S_pre_mat @ np.linalg.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
-            norm_b_perp = np.linalg.norm(b_perp_pre)
+            b_perp_pre = b - (S_pre_mat @ sli.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
+            norm_b_perp = sli.norm(b_perp_pre)
             pb = k * norm_b_perp * norm_b_perp/160./xi
             
         prob_sample = np.minimum(pb, 1)
@@ -262,12 +262,17 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
             S[:,count_pre + count_cur] = b
             Idx_cur.append(col)
             S_cur = S[:, :count_pre + count_cur+1]
-            Y[:count_pre + count_cur+1, :col] = S_cur.T @ Omg_A[:, :col]
-            C[:count_pre + count_cur+1, :col] = np.linalg.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur+1,:col]
+            Y[:count_pre + count_cur, col] = S[:, :count_pre + count_cur].T @ b
+            Y[count_pre + count_cur, :col] = b.T @ Omg_A[:, :col]
+
+            # C[:count_pre + count_cur+1, :col] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur+1,:col]
+            C[:count_pre + count_cur+1, :col] = sli.solve((S_cur.T@S_cur), Y[:count_pre + count_cur+1,:col])
             count_cur = count_cur + 1
         else:
-            S_pre_mat = S[:, :count_pre + count_cur]
-            Y[:count_pre + count_cur, :col] = S_pre_mat.T @ Omg_A[:, :col]
+            # S_pre_mat = S[:, :count_pre + count_cur]
+            S_cur = S[:, :count_pre + count_cur]
+            Y[:count_pre + count_cur, col] = S_cur.T @ Omg_A[:, col]
+            # C[:count_pre + count_cur, :col] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur, :col]
 
 
             
@@ -280,8 +285,9 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
                 count_cur = 0
                 Idx_pre = Idx_pre + Idx_cur
                 Idx_cur = []
-                S_cur = S[:, :count_pre + count_cur]
-                C[:count_pre + count_cur, :col] = np.linalg.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:col]
+                # S_cur = S[:, :count_pre + count_cur]
+                # Y[:count_pre + count_cur, :col] = S_cur.T @ Omg_A[:, :col]
+                # C[:count_pre + count_cur, :col] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:col]
 
         else:
             sigma = 0
@@ -289,11 +295,13 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
             count_cur = 0
             Idx_pre = Idx_pre + Idx_cur
             Idx_cur = []
-            S_cur = S[:, :count_pre + count_cur]
-            C[:count_pre + count_cur, :col] = np.linalg.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:col]
+            # S_cur = S[:, :count_pre + count_cur]
+            # Y[:count_pre + count_cur, :col] = S_cur.T @ Omg_A[:, :col]
+            # C[:count_pre + count_cur, :col] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:col]
 
+    # C[:count_pre + count_cur, :] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:]
 
-
+    C[:count_pre + count_cur, :] = sli.solve((S.T@S), Y[:count_pre + count_cur,:])
     Idx_final = Idx_pre + Idx_cur
 
 
@@ -317,29 +325,23 @@ def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
         Omg = rng.standard_normal(size=(l, m))
         S = np.zeros((l,k))
         C = np.zeros((k,n))
-
-        S_A = np.zeros((l,n))
+        Omg_A = np.zeros((l,n))
         # ! Store QR of selected column
         Q_scol = np.zeros((l,k))
         R_scol = np.zeros((k,k)) 
     else:
         S = np.zeros((m,k))
         C = np.zeros((k,n))
-        S_A = np.zeros((m,n))
+        Omg_A = np.zeros((m,n))
         # ! Store QR of selected column
         Q_scol = np.zeros((m,k))
         R_scol = np.zeros((k,k)) 
-
-    Y = np.zeros((k,n))
     
-
+    
     Idx_pre = []
     Idx_cur = []
 
-    count = 0 # Num of columns in the subset
-
     sigma = 0
-    eye_mat = np.eye(k)
     count_pre = 0
     count_cur = 0
 
@@ -350,25 +352,20 @@ def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
         else:
             b = a
 
-        S_A[:,col] = b # Store sketched matrix
+        Omg_A[:,col] = b # Store sketched matrix
 
         if count_pre == 0:
             S[:,count_pre] = b
             Idx_pre.append(col)
             C[count_pre, count_pre] = 1.0
-
-            Q_scol[:,count_pre] = b/np.linalg.norm(b)
-            R_scol[0,0] = np.linalg.norm(b)
-
-
+            Q_scol[:,count_pre] = b/sli.norm(b)
+            R_scol[0,0] = sli.norm(b)
             count_pre = count_pre + 1
-            
-
             continue
         else:
             S_pre_mat = S[:, :count_pre]
-            b_perp_pre = b - (S_pre_mat @ np.linalg.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
-            norm_b_perp = np.linalg.norm(b_perp_pre)
+            b_perp_pre = b - (S_pre_mat @ sli.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
+            norm_b_perp = sli.norm(b_perp_pre)
             pb = k * norm_b_perp * norm_b_perp/160./xi
             
         prob_sample = np.minimum(pb, 1)
@@ -377,27 +374,23 @@ def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
         if roll <= prob_sample and (count_pre + count_cur) < k:
             S[:,count_pre + count_cur] = b
             Idx_cur.append(col)
-            S_cur = S[:, :count_pre + count_cur]
-            Q_tmp, R_tmp = np.linalg.qr(np.hstack((Q_scol[:,:count_pre + count_cur],b.reshape(-1,1))))
+            Q_tmp, R_tmp = sli.qr(np.hstack((Q_scol[:,:count_pre + count_cur],b.reshape(-1,1))), mode = "economic")
             Q_scol[:,:count_pre + count_cur + 1] = Q_tmp
 
             RR = R_tmp @ np.block([[R_scol[:count_pre+count_cur,:count_pre+count_cur],np.zeros((count_pre+count_cur, 1))],[np.zeros((1,count_pre + count_cur)),1.0]])
             R_scol[:count_pre + count_cur + 1, :count_pre + count_cur + 1] = RR
 
-
-            C[:count_pre + count_cur + 1, :col] = np.linalg.inv(R_scol[:count_pre + count_cur + 1, :count_pre + count_cur + 1]) @ Q_tmp.T @ (S_A[:,:col])
+            # ! inverse solving
+            # C[:count_pre + count_cur + 1, :col] = sli.inv(R_scol[:count_pre + count_cur + 1, :count_pre + count_cur + 1]) @ Q_tmp.T @ (Omg_A[:,:col])
+            # ! triangular solving
+            C[:count_pre + count_cur + 1, :col] = sli.solve_triangular((R_scol[:count_pre + count_cur + 1, :count_pre + count_cur + 1]), Q_tmp.T @ (Omg_A[:,:col]))
 
             count_cur = count_cur + 1
             
         else:
-            C[:count_pre + count_cur, col] = np.linalg.inv(R_scol[:count_pre + count_cur, :count_pre + count_cur]) @ Q_scol[:,:count_pre + count_cur].T @ (S_A[:,col])
-            # S_pre_mat = S[:, :count_pre + count_cur]
-            # tmp_coeff, _ ,_,_= sli.lstsq(S_pre_mat,b)
-            # tmp_coeff = np.pad(tmp_coeff,(0,k-tmp_coeff.shape[0]))
-            # C[:, col] = tmp_coeff
+            # C[:count_pre + count_cur, col] = sli.inv(R_scol[:count_pre + count_cur, :count_pre + count_cur]) @ Q_scol[:,:count_pre + count_cur].T @ (Omg_A[:,col])
 
-
-            
+            C[:count_pre+ count_cur, col] = sli.solve_triangular((R_scol[:count_pre+ count_cur, :count_pre+ count_cur]), Q_tmp.T @ (Omg_A[:,col]))
             
         if pb < 1:
             sigma = sigma + pb
@@ -407,18 +400,15 @@ def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
                 count_cur = 0
                 Idx_pre = Idx_pre + Idx_cur
                 Idx_cur = []
-                # C_pre = C_pre + C_cur
-                # C_cur = []
         else:
             sigma = 0
             count_pre = count_pre + count_cur
             count_cur = 0
             Idx_pre = Idx_pre + Idx_cur
             Idx_cur = []
-            # C_pre = C_pre + C_cur
-            # C_cur = []
 
 
+    C[:count_pre, :col] = sli.solve_triangular(R_scol, Q_scol.T @ (Omg_A[:,:col]))
     Idx_final = Idx_pre + Idx_cur
 
 
@@ -512,7 +502,7 @@ def fastFrobeniusNorm(U, Vt, A, nrmA=None):
         Note: following numpy's svd convention, V is NOT transposed
     """
     if nrmA is None:
-        nrmA = np.linalg.norm(A, "fro")
+        nrmA = sli.norm(A, "fro")
     nrm2 = (
         nrmA**2 + np.trace((U.T @ U) @ (Vt @ Vt.T)) - 2 * np.trace((A @ Vt.T).T @ U)
     )
@@ -526,17 +516,18 @@ def main():
     
     # A = A[:,:100]
 
-    dimReduced = 10  # the "rank" of our approximation
+    dimReduced = 50  # the "rank" of our approximation
     flg_random = False
     rng = default_rng(1) # !For debugging
     xi = 0.05
 
     flg_debug = True
+    np.random.seed(42)
 
     m, n = np.shape(A)
     if flg_debug:
         flg_random = False
-        l = dimReduced + 10
+        l = 100
         Omg = rng.standard_normal(size=(l, m))
         
         A = Omg @ A
@@ -561,37 +552,37 @@ def main():
     err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
 
     print(
-        "Online randomized ID (Solve least-square), relative error:\t{0:.2e}, Time: {1:.4f} sec".format(
+        "Online randomized ID (Solve least-square), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
             err, t_end
         )
     )
 
-    # ! Use Stephen's idea to update coefficient
+    # # ! Use Stephen's idea to update coefficient
+    # t_start = time.time()
+    # C_final, Idx_final = rID_res_Stephen(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    # t_end = time.time() - t_start
+
+    # A_recon = A[:,Idx_final] @ C_final
+    # A_err = A-A_recon
+    # err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+
+    # print(
+    #     "Online randomized ID (Stephen's idea), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+    #         err, t_end
+    #     )
+    # )
+
+    # # ! Use QR update to update coefficient
     t_start = time.time()
-    C_final, Idx_final = rID_res_Stephen(A,dimReduced,xi, rng = rng, flg_random = flg_random)
-    t_end = time.time() - t_start
-
-    A_recon = A[:,Idx_final] @ C_final
-    A_err = A-A_recon
-    err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
-
-    print(
-        "Online randomized ID (Stephen's idea), relative error:\t{0:.2e}, Time: {1:.4f} sec".format(
-            err, t_end
-        )
-    )
-
-    # ! Use QR update to update coefficient
-    t_start = time.time()
-
-    t_end = time.time() - t_start
     C_final, Idx_final = rID_res_qr_update(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    t_end = time.time() - t_start
+
     A_recon = A[:,Idx_final] @ C_final
     A_err = A-A_recon
     err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
 
     print(
-        "Online randomized ID (QR_update), relative error:\t{0:.2e}, Time: {1:.4f} sec".format(
+        "Online randomized ID (QR_update), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
             err, t_end
         )
     )
