@@ -8,7 +8,7 @@ import scipy.linalg as sli
 
 def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
     """
-    Description: Randomized ID based on  Bhaskara et al. (2019)
+    Description: Randomized ID using residual based CSS 
 
     Notes: 1. Each column in the input matrix A represents the data from one time step
            2. The entire matrix A is processed col by col
@@ -20,8 +20,10 @@ def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
     l = k + os
     # l=40
 
-    rng = default_rng()
-    Omg = rng.standard_normal(size=(l, m))
+    if flg_random:
+        rng = default_rng()
+        Omg = rng.standard_normal(size=(l, m))
+
     S_pre = []
     S_cur = []
 
@@ -37,7 +39,6 @@ def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
 
     for col in range(n):
         a = A[:,col]
-        # b = Omg @ a
         if flg_random:
             b = Omg @ a
         else:
@@ -102,6 +103,326 @@ def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
     C_final_mat = np.asarray(C_final).T
 
     return S_final_mat, C_final_mat, Idx_final
+
+def rID_res_new(A, k, xi, rng=default_rng(), flg_random = True):
+    """
+    Description: Randomized ID From Voronin et al (2017)
+
+    Notes: 1. Each column in the input matrix A represents the data from one time step
+           2. The entire matrix A is processed col by col
+    """
+    m, n = np.shape(A)
+    os = 10
+    if m <= k:
+        k = m
+    l = k + os
+    # l=40
+
+    if flg_random:
+        rng = default_rng()
+        Omg = rng.standard_normal(size=(l, m))
+        S = np.zeros((l,k))
+        C = np.zeros((k,n))
+    else:
+        S = np.zeros((m,k))
+        C = np.zeros((k,n))
+
+    Idx_pre = []
+    Idx_cur = []
+
+    count = 0 # Num of columns in the subset
+    count_pre = 0
+    count_cur = 0
+    sigma = 0
+    eye_mat = np.eye(k)
+
+    for col in range(n):
+        a = A[:,col]
+        if flg_random:
+            b = Omg @ a
+        else:
+            b = a
+
+        if count_pre == 0:
+            S[:,count_pre] = b
+            Idx_pre.append(col)
+            C[count_pre, count_pre] = 1.0
+            count_pre = count_pre + 1
+            continue
+        else:
+            S_pre_mat = S[:, :count_pre]
+            b_perp_pre = b - (S_pre_mat @ np.linalg.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
+            norm_b_perp = np.linalg.norm(b_perp_pre)
+            # if col <=20:
+            #     print(np.shape(S_pre_mat))
+            #     print(norm_b_perp)
+            pb = k * norm_b_perp * norm_b_perp/160./xi
+            
+        prob_sample = np.minimum(pb, 1)
+
+        roll = np.random.random_sample()
+        # print(roll)
+        if roll <= prob_sample and (count_pre + count_cur) < k:
+            S[:,count_pre + count_cur] = b
+            Idx_cur.append(col)
+            C[count_pre + count_cur, col] = 1.0
+            count_cur = count_cur + 1
+        else:
+            S_pre_mat = S[:, :count_pre]
+            tmp_coeff, _ ,_,_= sli.lstsq(S_pre_mat,b)
+            tmp_coeff = np.pad(tmp_coeff,(0,k-tmp_coeff.shape[0]))
+            C[:, col] = tmp_coeff
+
+            
+            
+        if pb < 1:
+            sigma = sigma + pb
+            if sigma >= 1:
+                sigma = 0
+                count_pre = count_pre + count_cur
+                count_cur = 0
+                Idx_pre = Idx_pre + Idx_cur
+                Idx_cur = []
+                # C_pre = C_pre + C_cur
+                # C_cur = []
+        else:
+            sigma = 0
+            count_pre = count_pre + count_cur
+            count_cur = 0
+            Idx_pre = Idx_pre + Idx_cur
+            Idx_cur = []
+
+
+    Idx_final = Idx_pre + Idx_cur
+
+
+    return S, C, Idx_final
+
+def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
+    """
+    Description: Randomized ID using residual based CSS
+
+    Notes: 1. Each column in the input matrix A represents the data from one time step
+           2. The entire matrix A is processed col by col
+    """
+    m, n = np.shape(A)
+    os = 10
+    if m <= k:
+        k = m
+    l = k + os
+
+    if flg_random:
+        Omg = rng.standard_normal(size=(l, m))
+        S = np.zeros((l,k))
+        C = np.zeros((k,n))
+        Omg_A = np.zeros((l,n))
+    else:
+        S = np.zeros((m,k))
+        C = np.zeros((k,n))
+        Omg_A = np.zeros((m,n))
+
+    Y = np.zeros((k,n))
+    
+
+    Idx_pre = []
+    Idx_cur = []
+
+    count = 0 # Num of columns in the subset
+
+    sigma = 0
+    count_pre = 0 # Num of columns in previous subset
+    count_cur = 0 # Num of columns in new selected subset
+
+    for col in range(n):
+        a = A[:,col]
+        if flg_random:
+            b = Omg @ a
+        else:
+            b = a
+
+        Omg_A[:,col] = b # Store sketched matrix
+
+        if count_pre == 0:
+            S[:,count_pre] = b
+            Idx_pre.append(col)
+            C[count_pre, count_pre] = 1.0
+            count_pre = count_pre + 1
+            Y[0,0] = b.T @ b
+            continue
+        else:
+            S_pre_mat = S[:, :count_pre]
+            b_perp_pre = b - (S_pre_mat @ np.linalg.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
+            norm_b_perp = np.linalg.norm(b_perp_pre)
+            pb = k * norm_b_perp * norm_b_perp/160./xi
+            
+        prob_sample = np.minimum(pb, 1)
+
+        roll = np.random.random_sample()
+        if roll <= prob_sample and (count_pre + count_cur) < k:
+            S[:,count_pre + count_cur] = b
+            Idx_cur.append(col)
+            S_cur = S[:, :count_pre + count_cur+1]
+            Y[:count_pre + count_cur+1, :col] = S_cur.T @ Omg_A[:, :col]
+            C[:count_pre + count_cur+1, :col] = np.linalg.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur+1,:col]
+            count_cur = count_cur + 1
+        else:
+            S_pre_mat = S[:, :count_pre + count_cur]
+            Y[:count_pre + count_cur, :col] = S_pre_mat.T @ Omg_A[:, :col]
+
+
+            
+            
+        if pb < 1:
+            sigma = sigma + pb
+            if sigma >= 1:
+                sigma = 0
+                count_pre = count_pre + count_cur
+                count_cur = 0
+                Idx_pre = Idx_pre + Idx_cur
+                Idx_cur = []
+                S_cur = S[:, :count_pre + count_cur]
+                C[:count_pre + count_cur, :col] = np.linalg.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:col]
+
+        else:
+            sigma = 0
+            count_pre = count_pre + count_cur
+            count_cur = 0
+            Idx_pre = Idx_pre + Idx_cur
+            Idx_cur = []
+            S_cur = S[:, :count_pre + count_cur]
+            C[:count_pre + count_cur, :col] = np.linalg.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:col]
+
+
+
+    Idx_final = Idx_pre + Idx_cur
+
+
+    return C, Idx_final
+
+def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
+    """
+    Description: Randomized ID using residual based CSS
+
+    Notes: 1. Each column in the input matrix A represents the data from one time step
+           2. The entire matrix A is processed col by col
+    """
+    m, n = np.shape(A)
+    os = 10
+    if m <= k:
+        k = m
+    l = k + os
+
+    if flg_random:
+        rng = default_rng()
+        Omg = rng.standard_normal(size=(l, m))
+        S = np.zeros((l,k))
+        C = np.zeros((k,n))
+
+        S_A = np.zeros((l,n))
+        # ! Store QR of selected column
+        Q_scol = np.zeros((l,k))
+        R_scol = np.zeros((k,k)) 
+    else:
+        S = np.zeros((m,k))
+        C = np.zeros((k,n))
+        S_A = np.zeros((m,n))
+        # ! Store QR of selected column
+        Q_scol = np.zeros((m,k))
+        R_scol = np.zeros((k,k)) 
+
+    Y = np.zeros((k,n))
+    
+
+    Idx_pre = []
+    Idx_cur = []
+
+    count = 0 # Num of columns in the subset
+
+    sigma = 0
+    eye_mat = np.eye(k)
+    count_pre = 0
+    count_cur = 0
+
+    for col in range(n):
+        a = A[:,col]
+        if flg_random:
+            b = Omg @ a
+        else:
+            b = a
+
+        S_A[:,col] = b # Store sketched matrix
+
+        if count_pre == 0:
+            S[:,count_pre] = b
+            Idx_pre.append(col)
+            C[count_pre, count_pre] = 1.0
+
+            Q_scol[:,count_pre] = b/np.linalg.norm(b)
+            R_scol[0,0] = np.linalg.norm(b)
+
+
+            count_pre = count_pre + 1
+            
+
+            continue
+        else:
+            S_pre_mat = S[:, :count_pre]
+            b_perp_pre = b - (S_pre_mat @ np.linalg.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
+            norm_b_perp = np.linalg.norm(b_perp_pre)
+            pb = k * norm_b_perp * norm_b_perp/160./xi
+            
+        prob_sample = np.minimum(pb, 1)
+
+        roll = np.random.random_sample()
+        if roll <= prob_sample and (count_pre + count_cur) < k:
+            S[:,count_pre + count_cur] = b
+            Idx_cur.append(col)
+            S_cur = S[:, :count_pre + count_cur]
+            Q_tmp, R_tmp = np.linalg.qr(np.hstack((Q_scol[:,:count_pre + count_cur],b.reshape(-1,1))))
+            Q_scol[:,:count_pre + count_cur + 1] = Q_tmp
+
+            RR = R_tmp @ np.block([[R_scol[:count_pre+count_cur,:count_pre+count_cur],np.zeros((count_pre+count_cur, 1))],[np.zeros((1,count_pre + count_cur)),1.0]])
+            R_scol[:count_pre + count_cur + 1, :count_pre + count_cur + 1] = RR
+
+
+            C[:count_pre + count_cur + 1, :col] = np.linalg.inv(R_scol[:count_pre + count_cur + 1, :count_pre + count_cur + 1]) @ Q_tmp.T @ (S_A[:,:col])
+
+            count_cur = count_cur + 1
+            
+        else:
+            C[:count_pre + count_cur, col] = np.linalg.inv(R_scol[:count_pre + count_cur, :count_pre + count_cur]) @ Q_scol[:,:count_pre + count_cur].T @ (S_A[:,col])
+            # S_pre_mat = S[:, :count_pre + count_cur]
+            # tmp_coeff, _ ,_,_= sli.lstsq(S_pre_mat,b)
+            # tmp_coeff = np.pad(tmp_coeff,(0,k-tmp_coeff.shape[0]))
+            # C[:, col] = tmp_coeff
+
+
+            
+            
+        if pb < 1:
+            sigma = sigma + pb
+            if sigma >= 1:
+                sigma = 0
+                count_pre = count_pre + count_cur
+                count_cur = 0
+                Idx_pre = Idx_pre + Idx_cur
+                Idx_cur = []
+                # C_pre = C_pre + C_cur
+                # C_cur = []
+        else:
+            sigma = 0
+            count_pre = count_pre + count_cur
+            count_cur = 0
+            Idx_pre = Idx_pre + Idx_cur
+            Idx_cur = []
+            # C_pre = C_pre + C_cur
+            # C_cur = []
+
+
+    Idx_final = Idx_pre + Idx_cur
+
+
+    return C, Idx_final
 
 def onepass_update(A, Omega, blockSize=1):
     """Computes G = A@Omega and H = A.T@G in one-pass,
@@ -200,28 +521,77 @@ def fastFrobeniusNorm(U, Vt, A, nrmA=None):
 
 def main():
     """Runs a simple test to see if things are working; not exhaustive test!"""
-    A = load_JHTDB_data(which_component="x",nsample=256)
+    A = load_JHTDB_data(which_component="x",nsample=64)
+    
+    
     # A = A[:,:100]
 
     dimReduced = 10  # the "rank" of our approximation
+    flg_random = False
+    rng = default_rng(1) # !For debugging
     xi = 0.05
 
+    flg_debug = True
+
     m, n = np.shape(A)
-    print(f"Matrix is {m} x {n}, using rank {dimReduced}")
+    if flg_debug:
+        flg_random = False
+        l = dimReduced + 10
+        Omg = rng.standard_normal(size=(l, m))
+        
+        A = Omg @ A
+        print(f"Matrix is {l} x {n}, using rank {dimReduced}")
+    else:
+        print(f"Matrix is {m} x {n}, using rank {dimReduced}")
 
     # rng = default_rng(1)  # make it reproducible (useful for checking for bugs)
     # # rng = default_rng()   # not reproducible
 
+    # t_start = time.time()
+    # _, C_final, Idx_final = rID_res(A,dimReduced,xi)
+    # t_end = time.time() - t_start
+
+    # ! Solve Least-square to keep adding coefficient
     t_start = time.time()
-    _, C_final, Idx_final = rID_res(A,dimReduced,xi)   
+    _, C_final, Idx_final = rID_res_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
     t_end = time.time() - t_start
 
     A_recon = A[:,Idx_final] @ C_final
     A_err = A-A_recon
-    err = sli.norm(A-A_recon,'fro')/sli.norm(A,'fro')
+    err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
 
     print(
-        "Online randomized ID (update basis col by col), relative error:\t{0:.2e}, Time: {1:.4f} sec".format(
+        "Online randomized ID (Solve least-square), relative error:\t{0:.2e}, Time: {1:.4f} sec".format(
+            err, t_end
+        )
+    )
+
+    # ! Use Stephen's idea to update coefficient
+    t_start = time.time()
+    C_final, Idx_final = rID_res_Stephen(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    t_end = time.time() - t_start
+
+    A_recon = A[:,Idx_final] @ C_final
+    A_err = A-A_recon
+    err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+
+    print(
+        "Online randomized ID (Stephen's idea), relative error:\t{0:.2e}, Time: {1:.4f} sec".format(
+            err, t_end
+        )
+    )
+
+    # ! Use QR update to update coefficient
+    t_start = time.time()
+
+    t_end = time.time() - t_start
+    C_final, Idx_final = rID_res_qr_update(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    A_recon = A[:,Idx_final] @ C_final
+    A_err = A-A_recon
+    err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+
+    print(
+        "Online randomized ID (QR_update), relative error:\t{0:.2e}, Time: {1:.4f} sec".format(
             err, t_end
         )
     )
