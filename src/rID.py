@@ -263,12 +263,14 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
 
         roll = np.random.random_sample()
         if roll <= prob_sample and (count_pre + count_cur) < k:
-            S_new = b - S[:,:count_pre + count_cur] @ (S[:,:count_pre + count_cur].T @ b)
+            S_new = b - S_ortho[:,:count_pre + count_cur] @ (S_ortho[:,:count_pre + count_cur].T @ b)
             S_new = S_new /sli.norm(S_new)
             S[:,count_pre + count_cur] = b
             S_ortho[:,count_pre + count_cur] = S_new
             Idx_cur.append(col)
             S_cur = S_ortho[:, :count_pre + count_cur+1]
+
+            # print(np.linalg.cond(S_cur.T@S_cur))
 
             
             # Y[:count_pre + count_cur+1, :col] = 
@@ -539,7 +541,7 @@ def main():
 
     m, n = np.shape(A)
     if flg_debug:
-        flg_random = False
+        flg_random = True
         l = 1200
         Omg = rng.standard_normal(size=(l, m))
         
@@ -556,37 +558,37 @@ def main():
     # t_end = time.time() - t_start
 
     # ! Solve Least-square to keep adding coefficient
-    t_start = time.time()
-    _, C_final, Idx_final = rID_res_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
-    t_end = time.time() - t_start
-
-    A_recon = A[:,Idx_final] @ C_final
-    A_err = A-A_recon
-    err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
-    print(Idx_final)
-
-    print(
-        "Online randomized ID (Solve least-square), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
-            err, t_end
-        )
-    )
-
-    # # ! Use Stephen's idea to update coefficient
     # t_start = time.time()
-    # S_final, C_final, Idx_final = rID_res_Stephen(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    # _, C_final, Idx_final = rID_res_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
     # t_end = time.time() - t_start
 
-    # # A_recon = A[:,Idx_final] @ C_final
-    # A_recon = S_final @ C_final
+    # A_recon = A[:,Idx_final] @ C_final
     # A_err = A-A_recon
     # err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
     # print(Idx_final)
 
     # print(
-    #     "Online randomized ID (Stephen's idea), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+    #     "Online randomized ID (Solve least-square), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
     #         err, t_end
     #     )
     # )
+
+    # # ! Use Stephen's idea to update coefficient
+    t_start = time.time()
+    S_final, C_final, Idx_final = rID_res_Stephen(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    t_end = time.time() - t_start
+
+    # A_recon = A[:,Idx_final] @ C_final
+    A_recon = S_final @ C_final
+    A_err = A-A_recon
+    err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+    print(Idx_final)
+
+    print(
+        "Online randomized ID (Stephen's idea), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+            err, t_end
+        )
+    )
 
     # # ! Use QR update to update coefficient
     # t_start = time.time()
