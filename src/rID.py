@@ -5,6 +5,7 @@ import time
 import h5py
 from numpy.random import default_rng
 import scipy.linalg as sli
+import scipy.io as sio
 
 def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
     """
@@ -106,7 +107,7 @@ def rID_res(A, k, xi, rng=default_rng(), flg_random = True):
 
 def rID_res_new(A, k, xi, rng=default_rng(), flg_random = True):
     """
-    Description: Randomized ID From Voronin et al (2017)
+    Description: Randomized ID using residual based CSS, solve least square problem to get coefficient of the new columns
 
     Notes: 1. Each column in the input matrix A represents the data from one time step
            2. The entire matrix A is processed col by col
@@ -214,10 +215,12 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
     if flg_random:
         Omg = rng.standard_normal(size=(l, m))
         S = np.zeros((l,k))
+        S_ortho = np.zeros((l,k))
         C = np.zeros((k,n))
         Omg_A = np.zeros((l,n))
     else:
         S = np.zeros((m,k))
+        S_ortho = np.zeros((m,k))
         C = np.zeros((k,n))
         Omg_A = np.zeros((m,n))
 
@@ -244,6 +247,7 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
 
         if count_pre == 0:
             S[:,count_pre] = b
+            S_ortho[:,count_pre] = b /sli.norm(b)
             Idx_pre.append(col)
             C[count_pre, count_pre] = 1.0
             count_pre = count_pre + 1
@@ -259,20 +263,27 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
 
         roll = np.random.random_sample()
         if roll <= prob_sample and (count_pre + count_cur) < k:
+            S_new = b - S[:,:count_pre + count_cur] @ (S[:,:count_pre + count_cur].T @ b)
+            S_new = S_new /sli.norm(S_new)
             S[:,count_pre + count_cur] = b
+            S_ortho[:,count_pre + count_cur] = S_new
             Idx_cur.append(col)
-            S_cur = S[:, :count_pre + count_cur+1]
-            Y[:count_pre + count_cur, col] = S[:, :count_pre + count_cur].T @ b
-            Y[count_pre + count_cur, :col] = b.T @ Omg_A[:, :col]
+            S_cur = S_ortho[:, :count_pre + count_cur+1]
+
+            
+            # Y[:count_pre + count_cur+1, :col] = 
+            # ! Only update needed 
+            Y[:count_pre + count_cur, col] = S_ortho[:, :count_pre + count_cur].T @ S_new
+            Y[count_pre + count_cur, :col] = S_new.T @ Omg_A[:, :col]
 
             # C[:count_pre + count_cur+1, :col] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur+1,:col]
             C[:count_pre + count_cur+1, :col] = sli.solve((S_cur.T@S_cur), Y[:count_pre + count_cur+1,:col])
             count_cur = count_cur + 1
         else:
             # S_pre_mat = S[:, :count_pre + count_cur]
-            S_cur = S[:, :count_pre + count_cur]
+            S_cur = S_ortho[:, :count_pre + count_cur]
             Y[:count_pre + count_cur, col] = S_cur.T @ Omg_A[:, col]
-            # C[:count_pre + count_cur, :col] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur, :col]
+            # C[:count_pre + count_cur, col] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur, col]
 
 
             
@@ -301,15 +312,15 @@ def rID_res_Stephen(A, k, xi, rng=default_rng(), flg_random = True):
 
     # C[:count_pre + count_cur, :] = sli.inv(S_cur.T@S_cur) @ Y[:count_pre + count_cur,:]
 
-    C[:count_pre + count_cur, :] = sli.solve((S.T@S), Y[:count_pre + count_cur,:])
+    C= sli.solve((S_ortho.T@S_ortho), Y)
     Idx_final = Idx_pre + Idx_cur
 
 
-    return C, Idx_final
+    return S_ortho, C, Idx_final
 
 def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
     """
-    Description: Randomized ID using residual based CSS
+    Description: Randomized ID using residual based CSS, update coefficient with QR update method.
 
     Notes: 1. Each column in the input matrix A represents the data from one time step
            2. The entire matrix A is processed col by col
@@ -390,7 +401,7 @@ def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
         else:
             # C[:count_pre + count_cur, col] = sli.inv(R_scol[:count_pre + count_cur, :count_pre + count_cur]) @ Q_scol[:,:count_pre + count_cur].T @ (Omg_A[:,col])
 
-            C[:count_pre+ count_cur, col] = sli.solve_triangular((R_scol[:count_pre+ count_cur, :count_pre+ count_cur]), Q_tmp.T @ (Omg_A[:,col]))
+            C[:count_pre+ count_cur, col] = sli.solve_triangular((R_scol[:count_pre+ count_cur, :count_pre+ count_cur]),  Q_scol[:,:count_pre + count_cur].T @ (Omg_A[:,col]))
             
         if pb < 1:
             sigma = sigma + pb
@@ -408,7 +419,7 @@ def rID_res_qr_update(A, k, xi, rng=default_rng(), flg_random = True):
             Idx_cur = []
 
 
-    C[:count_pre, :col] = sli.solve_triangular(R_scol, Q_scol.T @ (Omg_A[:,:col]))
+    C[:count_pre, :] = sli.solve_triangular(R_scol[:count_pre, :count_pre], Q_scol[:,:count_pre].T @ (Omg_A))
     Idx_final = Idx_pre + Idx_cur
 
 
@@ -512,22 +523,24 @@ def fastFrobeniusNorm(U, Vt, A, nrmA=None):
 def main():
     """Runs a simple test to see if things are working; not exhaustive test!"""
     A = load_JHTDB_data(which_component="x",nsample=64)
+
+    # A = sio.loadmat("../test_mat2/A1.mat")['A1']
     
     
     # A = A[:,:100]
 
-    dimReduced = 50  # the "rank" of our approximation
+    dimReduced = 10  # the "rank" of our approximation
     flg_random = False
     rng = default_rng(1) # !For debugging
     xi = 0.05
 
-    flg_debug = True
-    np.random.seed(42)
+    flg_debug = False
+    np.random.seed(41)
 
     m, n = np.shape(A)
     if flg_debug:
         flg_random = False
-        l = 100
+        l = 1200
         Omg = rng.standard_normal(size=(l, m))
         
         A = Omg @ A
@@ -550,6 +563,7 @@ def main():
     A_recon = A[:,Idx_final] @ C_final
     A_err = A-A_recon
     err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+    print(Idx_final)
 
     print(
         "Online randomized ID (Solve least-square), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
@@ -559,12 +573,14 @@ def main():
 
     # # ! Use Stephen's idea to update coefficient
     # t_start = time.time()
-    # C_final, Idx_final = rID_res_Stephen(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    # S_final, C_final, Idx_final = rID_res_Stephen(A,dimReduced,xi, rng = rng, flg_random = flg_random)
     # t_end = time.time() - t_start
 
-    # A_recon = A[:,Idx_final] @ C_final
+    # # A_recon = A[:,Idx_final] @ C_final
+    # A_recon = S_final @ C_final
     # A_err = A-A_recon
     # err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+    # print(Idx_final)
 
     # print(
     #     "Online randomized ID (Stephen's idea), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
@@ -573,19 +589,20 @@ def main():
     # )
 
     # # ! Use QR update to update coefficient
-    t_start = time.time()
-    C_final, Idx_final = rID_res_qr_update(A,dimReduced,xi, rng = rng, flg_random = flg_random)
-    t_end = time.time() - t_start
+    # t_start = time.time()
+    # C_final, Idx_final = rID_res_qr_update(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    # t_end = time.time() - t_start
 
-    A_recon = A[:,Idx_final] @ C_final
-    A_err = A-A_recon
-    err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+    # A_recon = A[:,Idx_final] @ C_final
+    # A_err = A-A_recon
+    # err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+    # print(Idx_final)
 
-    print(
-        "Online randomized ID (QR_update), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
-            err, t_end
-        )
-    )
+    # print(
+    #     "Online randomized ID (QR_update), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+    #         err, t_end
+    #     )
+    # )
 
 if __name__ == "__main__":
     main()
