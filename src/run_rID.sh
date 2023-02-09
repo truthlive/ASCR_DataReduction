@@ -3,7 +3,7 @@
 echo "Running randomized ID and compute coefficient by solving Least-square problem"
 python rID.py -m 1 --random
 
-echo "Running randomized ID and compute coefficient by solving Least-square problem"
+echo "Running randomized ID and compute coefficient by  X = inv(A_Omega^T A_Omega) * A_Omega^T A"
 python rID.py -m 2 --random
 
 echo "Running randomized ID and updating coefficient based on approximation residual of old basis"
