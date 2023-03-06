@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import numpy as np
-import matplotlib as plt
+import matplotlib.pyplot as plt
 import time
 import h5py
 from numpy.random import default_rng
@@ -386,7 +386,7 @@ def rID_res_Stephen_new(A, k, xi, rng=default_rng(), flg_random = True):
             Y[0,0] = (a/sli.norm(a)).T @ a
             continue
         else:
-            S_pre_mat = S[:, :count_pre]
+            S_pre_mat = S[:, :count_pre+count_cur]
             b_perp_pre = b - (S_pre_mat @ sli.inv(S_pre_mat.T@S_pre_mat) @ S_pre_mat.T) @ b
             norm_b_perp = sli.norm(b_perp_pre)
             pb = k * norm_b_perp * norm_b_perp/160./xi
@@ -401,6 +401,8 @@ def rID_res_Stephen_new(A, k, xi, rng=default_rng(), flg_random = True):
 
             A_new = a - A_ortho[:,:count_pre + count_cur] @ (A_ortho[:,:count_pre + count_cur].T @ a)
             A_new = A_new/sli.norm(A_new)
+            # print(A_new)
+            # print(sli.norm(A_new))
             A_ortho[:,count_pre + count_cur] = A_new
             
             S[:,count_pre + count_cur] = b
@@ -410,6 +412,7 @@ def rID_res_Stephen_new(A, k, xi, rng=default_rng(), flg_random = True):
             AT_A[:count_pre + count_cur+1, :count_pre + count_cur+1] = A_ortho[:, :count_pre + count_cur+1].T @ A_ortho[:, :count_pre + count_cur+1]
 
             # print(np.linalg.cond(A_cur.T@A_cur))
+            # print(count_cur)
 
             
             # Y[:count_pre + count_cur+1, :col] = 
@@ -729,7 +732,7 @@ def onepass_update(A, Omega, blockSize=1):
     return G, H
 
 def load_JHTDB_data(
-    data_directory="../test_JHTDB/", ntstep=1000, nsample=64, which_component="x"
+    data_directory="../test_JHTDB/", ntstep=1000, nsample=64, which_component="x",data_name = "channel"
 ):
     """Loads channel flow data, either x or y or z component (of velocity?)
     The output matrix is reshaped to be nsample^2 x ntstep
@@ -740,8 +743,11 @@ def load_JHTDB_data(
 
     # ! Load testing channel flow
 
+    # fname = os.path.join(
+    #     data_directory, f"channel_x1_{nsample}_y256_z1_{nsample}_t{ntstep}.h5"
+    # )
     fname = os.path.join(
-        data_directory, f"channel_x1_{nsample}_y256_z1_{nsample}_t{ntstep}.h5"
+        data_directory, f"{data_name}_x1_{nsample}_y256_z1_{nsample}_t{ntstep}.h5"
     )
 
     # f = h5py.File("../test_JHTDB/channel_x1_64_y256_z1_64_t1000.h5")
@@ -797,12 +803,306 @@ def LOO_CV_sketching(SA, Sb):
     for i in range(m):
         idx = range(i-1) + range(i, m)
         beta = sli.solve(SA[idx,:],Sb[idx,:])
-        nrm2 = nrm2 + sli.norm(SA[i,:] @beta -Sb[i,:],'fro')**2
+        error = sli.norm(SA[i,:] @beta -Sb[i,:],'fro')**2
+        nrm2 = nrm2 + error
+
+def LOO_CV_sketching_Ttest():
+    args = parse_args()
+    method = args.m
+
+    method_compare = args.q
+
+    """Runs a simple test to see if things are working; not exhaustive test!"""
+    A = load_JHTDB_data(which_component="x",nsample=64)
+    m, n = np.shape(A)
+
+    # A = sio.loadmat("../test_mat2/A1.mat")['A1']
+    
+    
+    # A = A[:,:100]
+
+    dimReduced = 40  # the "rank" of our approximation
+    rng = default_rng(1) # !For debugging
+    xi = 0.05
+
+    flg_random = False
+
+    os = 10
+    l = dimReduced + os
+    Omg = rng.standard_normal(size=(l, m))
+    A = Omg @ A
+    ms, n = np.shape(A)
+    
+    print(f"Sketched Matrix is {ms} x {n}")
+    
+    
+    nrm2 = 0
+    nrm2_compare = 0
+    list_res = []
+    list_res_compare = []
+
+    list_err = []
+    list_err_compare = []
+
+    np.random.seed(41)
+    for i in range(ms):
+        idx = [*range(ms)]
+        # print(idx,i)
+        idx.remove(i)
+        # idx = range(i-1) + range(i, ms)
+        SA = A[idx,:]
+        if method == 1:
+            # ! Solve Least-square to keep adding coefficient
+            t_start = time.time()
+            _, C_final, Idx_final = rID_res_new(SA,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            A_recon = A[:,Idx_final] @ C_final
+
+            tmp_res = A[i,Idx_final] @ C_final - A[i,:]
+            list_res.append(tmp_res)
+            tmp_err2 = sli.norm(tmp_res)
+            list_err.append(tmp_err2)
+            nrm2 = nrm2 + tmp_err2**2
+           
+
+            print(
+                "Online randomized ID (Solve least-square), leave-out index:{2} relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    tmp_err2, t_end, i
+                )
+            )
+        elif method == 2:
+            # ! Use Stephen's idea to update coefficient
+            t_start = time.time()
+            S_final, C_final, Idx_final = rID_res_Stephen_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            # A_recon = A[:,Idx_final] @ C_final
+            A_recon = S_final @ C_final
+            A_err = A-A_recon
+            err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+            # print(Idx_final)
+
+            print(
+                "Online randomized ID (Stephen's idea), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    err, t_end
+                )
+            )
+        elif method == 3:
+            # # ! Use Stephen's second idea to update coefficient based on residual
+            t_start = time.time()
+            S_final, C_final, Idx_final = rID_res_Stephen2(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            tmp_res = A[i,Idx_final] @ C_final - A[i,:]
+            list_res.append(tmp_res)
+            tmp_err2 = sli.norm(tmp_res)
+            list_err.append(tmp_err2)
+            nrm2 = nrm2 + tmp_err2**2
+
+            print(
+                "Online randomized ID (update based on residual), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    tmp_err2, t_end
+                )
+            )
+        elif method == 4:
+            # ! Use QR update to update coefficient
+            t_start = time.time()
+            C_final, Idx_final = rID_res_qr_update(SA,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            A_recon = A[:,Idx_final] @ C_final
+
+            tmp_res = A[i,Idx_final] @ C_final - A[i,:]
+            list_res.append(tmp_res)
+            tmp_err2 = sli.norm(tmp_res)
+            list_err.append(tmp_err2)
+            nrm2 = nrm2 + tmp_err2**2
+           
+
+            print(
+                "Online randomized ID (Solve least-square), leave-out index:{2} relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    tmp_err2, t_end, i
+                )
+            )
+
+        if method_compare == 1:
+            # ! Solve Least-square to keep adding coefficient
+            t_start = time.time()
+            _, C_final, Idx_final = rID_res_new(SA,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            A_recon = A[:,Idx_final] @ C_final
+
+            tmp_res = A[i,Idx_final] @ C_final - A[i,:]
+            list_res_compare.append(tmp_res)
+            tmp_err2 = sli.norm(tmp_res)
+            list_err_compare.append(tmp_err2)
+            nrm2_compare = nrm2_compare + tmp_err2**2
+           
+
+            print(
+                "Online randomized ID (Solve least-square), leave-out index:{2} relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    tmp_err2, t_end, i
+                )
+            )
+        elif method_compare == 2:
+            # ! Use Stephen's idea to update coefficient
+            t_start = time.time()
+            S_final, C_final, Idx_final = rID_res_Stephen_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            # A_recon = A[:,Idx_final] @ C_final
+            A_recon = S_final @ C_final
+            A_err = A-A_recon
+            err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+            # print(Idx_final)
+
+            print(
+                "Online randomized ID (Stephen's idea), leave-out index:{2} relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    err, t_end
+                )
+            )
+        elif method_compare == 3:
+            # # ! Use Stephen's second idea to update coefficient based on residual
+            t_start = time.time()
+            S_final, C_final, Idx_final = rID_res_Stephen2(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            A_recon = A[:,Idx_final] @ C_final
+
+            tmp_res = A[i,Idx_final] @ C_final - A[i,:]
+            list_res_compare.append(tmp_res)
+            tmp_err2 = sli.norm(tmp_res)
+            list_err_compare.append(tmp_err2)
+            nrm2_compare = nrm2_compare + tmp_err2**2
+
+            print(
+                "Online randomized ID (update based on residual), leave-out index:{2} relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    tmp_err2, t_end,i
+                )
+            )
+        elif method_compare == 4:
+            # ! Use QR update to update coefficient
+            t_start = time.time()
+            C_final, Idx_final = rID_res_qr_update(SA,dimReduced,xi, rng = rng, flg_random = flg_random)
+            t_end = time.time() - t_start
+
+            A_recon = A[:,Idx_final] @ C_final
+
+            tmp_res = A[i,Idx_final] @ C_final - A[i,:]
+            list_res_compare.append(tmp_res)
+            tmp_err2 = sli.norm(tmp_res)
+            list_err_compare.append(tmp_err2)
+            nrm2_compare = nrm2_compare + tmp_err2**2
+           
+
+            print(
+                "Online randomized ID (QR update), leave-out index:{2} relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                    tmp_err2, t_end, i
+                )
+            )
+
+    print("Estimated relative error:\t{0:.4e}".format(np.sqrt(nrm2)/sli.norm(A,'fro')))
+    print("Estimated relative error compare:\t{0:.4e}".format(np.sqrt(nrm2_compare)/sli.norm(A,'fro')))
+
+
+    diff = np.zeros((ms,1))
+    for i in range(ms):
+        diff[i]=(list_err[i]-list_err_compare[i])
+    mean = np.mean(diff)
+    std = np.std(diff, ddof = 1)
+    t_stat = mean * np.sqrt(ms)/std
+    print(f'T statitics: {t_stat}')
+
+
+    if method == 1:
+        # ! Solve Least-square to keep adding coefficient
+        t_start = time.time()
+        _, C_final, Idx_final = rID_res_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+        t_end = time.time() - t_start
+
+        A_recon = A[:,Idx_final] @ C_final
+        A_err = A-A_recon
+        err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+        # print(Idx_final)
+
+        print(
+            "Online randomized ID (Solve least-square), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                err, t_end
+            )
+        )
+    elif method == 2:
+        # ! Use Stephen's idea to update coefficient
+        t_start = time.time()
+        S_final, C_final, Idx_final= rID_res_Stephen_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+        t_end = time.time() - t_start
+
+        # A_recon = A[:,Idx_final] @ C_final
+        A_recon = S_final @ C_final
+        A_err = A-A_recon
+        err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+        # print(Idx_final)
+
+        print(
+            "Online randomized ID (Stephen's idea), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                err, t_end
+            )
+        )
+    elif method == 3:
+        # # ! Use Stephen's second idea to update coefficient based on residual
+        t_start = time.time()
+        S_final, C_final, Idx_final = rID_res_Stephen2(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+        t_end = time.time() - t_start
+
+        A_recon = A[:,Idx_final] @ C_final
+        # A_recon = S_final @ C_final
+        A_err = A-A_recon
+        err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+        # print(Idx_final)
+
+        print(
+            "Online randomized ID (update based on residual), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                err, t_end
+            )
+        )
+    elif method == 4:
+        # ! Use QR update to update coefficient
+        t_start = time.time()
+        C_final, Idx_final= rID_res_qr_update(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+        t_end = time.time() - t_start
+
+        A_recon = A[:,Idx_final] @ C_final
+        A_err = A-A_recon
+        err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+        # print(Idx_final)
+
+        print(
+            "Online randomized ID (QR_update), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+                err, t_end
+            )
+        )
+    # t_start = time.time()
+    # _, C_final, Idx_final = rID_res_new(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+    # t_end = time.time() - t_start
+
+    # A_recon = A[:,Idx_final] @ C_final
+    # A_err = A-A_recon
+    # err = sli.norm(A_err,'fro')/sli.norm(A,'fro')
+    
+
+    # print(
+    #     "Online randomized ID (Solve least-square), relative error:\t{0:.4e}, Time: {1:.4f} sec".format(
+    #         err, t_end
+    #     )
+    # )
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', type=int,
                         help='Select method')
+    parser.add_argument('-q', type=int,
+                        help='Select method for comparison')
     parser.add_argument('--random',  action=argparse.BooleanOptionalAction)
     args = parser.parse_args()
     return args
@@ -812,26 +1112,26 @@ def main():
     method = args.m
 
     """Runs a simple test to see if things are working; not exhaustive test!"""
-    A = load_JHTDB_data(which_component="x",nsample=64)
+    A = load_JHTDB_data(which_component="x",nsample=64,data_name="channel")
 
     # A = sio.loadmat("../test_mat2/A1.mat")['A1']
     
     
     # A = A[:,:100]
 
-    dimReduced = 10  # the "rank" of our approximation
+    dimReduced = 5  # the "rank" of our approximation
     flg_random = args.random
     print(flg_random)
     rng = default_rng(1) # !For debugging
     xi = 0.05
 
-    flg_debug = False
+    flg_debug = True
     
 
     m, n = np.shape(A)
     if flg_debug:
         flg_random = False
-        l = 100
+        l = 400
         Omg = rng.standard_normal(size=(l, m))
         
         A = Omg @ A
@@ -847,7 +1147,8 @@ def main():
     # t_start = time.time()
     # _, C_final, Idx_final = rID_res(A,dimReduced,xi)
     # t_end = time.time() - t_start
-    list_rank = [10,20,40,50,100]
+    # list_rank = [5,10,20,40,50,100]
+    list_rank = [20]
 
     for dimReduced in list_rank:
         np.random.seed(41)
@@ -887,7 +1188,7 @@ def main():
         elif method == 3:
             # # ! Use Stephen's second idea to update coefficient based on residual
             t_start = time.time()
-            S_final, C_final, Idx_final = rID_res_Stephen2(A,dimReduced,xi, rng = rng, flg_random = flg_random)
+            S_final, C_final, Idx_final= rID_res_Stephen2(A,dimReduced,xi, rng = rng, flg_random = flg_random)
             t_end = time.time() - t_start
 
             A_recon = A[:,Idx_final] @ C_final
@@ -917,6 +1218,21 @@ def main():
                     err, t_end
                 )
             )
+        
+        # tt = np.linspace(0,n,n)
+        # fig = plt.figure()
+        # for i in range(dimReduced):
+        #     plt.plot(tt, C_final[i,:])
+        #     print(np.average(np.abs(C_final[i,:])))
+
+        # list_legend = [str(x) for x in range(dimReduced)]
+        # plt.legend(list_legend)
+
+        # plt.show()
+        # plt.save('../test_JHTDB/Coefficient_k{0}.png'.format(dimReduced))
+
+
 
 if __name__ == "__main__":
     main()
+    # LOO_CV_sketching_Ttest()
