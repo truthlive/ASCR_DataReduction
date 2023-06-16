@@ -12,6 +12,45 @@ import argparse
 # from plot_gif import make_gif_matrix
 import multiprocessing
 
+def NAHutchPPEstimator_reuse_sample(A, AS, Omg, c1, c2, c3):
+    """
+    Non-Adaptive Hutch++ trace estimator for streaming data, fit for col-by-col or block-by-block stream
+    
+    Variable: 
+        A - New loaded column
+        AS - Sketched column
+        Omg - Sketching matrix
+        c1, c2, c3: parameters for NAHutch++ algorithm
+    """
+
+    l, m = np.shape(Omg)
+
+    idx_S = np.arange(np.floor(c1*l).astype(int))
+    idx_R = np.arange(np.floor(c1*l).astype(int),np.floor((c1+c2)*l).astype(int))
+    idx_G = np.arange(np.floor((c1+c2)*l).astype(int),l)
+
+
+    S = Omg.T[:,idx_S]
+    # R = Omg.T[:,idx_R]
+    G = Omg.T[:,idx_G]
+
+    
+    # % Compute NA-Hutch++ Estimator
+    if len(A.shape) == 1 and len(AS.shape) == 1:
+        Query = np.outer(A, AS)
+    else:
+       Query = A @ AS.T
+    
+    Z = Query[:,idx_R]
+    W = Query[:,idx_S]
+    GTAG = G.T @ Query[:,idx_G]
+
+    # a1 = np.matrix.trace(sla.pinv(S.T@Z)@(W.T@Z)) 
+    # a2 = (np.matrix.trace(G.T@A@G) - np.matrix.trace((G.T@Z)@sla.pinv(S.T@Z)@(W.T@G)))
+    trace_est = np.matrix.trace(sla.pinv(S.T@Z)@(W.T@Z)) + 1/np.shape(G)[1]*(np.matrix.trace(GTAG) - np.matrix.trace((G.T@Z)@sla.pinv(S.T@Z)@(W.T@G)))
+
+    return trace_est
+
 def det_ridge_leverage(A, k, epsilon, plot=False, without_replacement=False, rs=32342342):
     """
     from http://arxiv.org/abs/1511.07263
