@@ -108,13 +108,25 @@ def onepass_update(A,Omega,blockSize=1):
 
     G = np.zeros((0,k))
     H = np.zeros((n,k))
+    #print(f"Row-major order (C order) is: {A.flags['C_CONTIGUOUS']}")
     
     if blockSize == 1:
+        G = np.zeros((m,k))   # preallocate for speed
+        aTg = np.zeros((n,k)) # we'll reuse the same memory for speed
         for row in range(m):
             a = A[row, :].reshape((1,n))
             g = a @ Omega
-            G = np.vstack((G, g))
-            H = H + a.T@g
+            G[row,:] = g # faster than G = np.vstack((G, g))
+
+            # H = H + a.T @ g # Slow (23.1 sec)
+
+            # H += np.outer(a,g)  # Medium (16.3 sec)
+
+            # np.outer(a,g, out = aTg) 
+            # H += aTg  # Medium fast (11.6 sec)
+            
+            # H = scipy.linalg.blas.dger(1.0,a.flatten(), g.flatten(), a=H, overwrite_a = 0) # Fast (7.3 sec)
+            H = scipy.linalg.blas.dger(1.0,a.flatten(), g.flatten(), a=H, overwrite_a = 1) # Fastest (3.2 sec)
     else:
         # New code
         nBlocks = int( m / blockSize )
