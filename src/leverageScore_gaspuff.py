@@ -209,10 +209,9 @@ def rID_streaming_ridge_leverage3(
         else:
             # tau = np.minimum(tau_old, ApproximateRidgeScores2(OmgA[:,:i], Omg, C, frobA, k))
             # tau_D = ApproximateRidgeScores2(OmgA[:,:i], Omg, D, frobA, k)
-            tau = np.minimum(
-                tau_old, ApproximateRidgeScores3(OmgAOmgAt, Omg, C, frobA, k)
-            )
-            tau_D = ApproximateRidgeScores3(OmgAOmgAt, Omg, D, frobA, k)
+            tau, U, eig = ApproximateRidgeScores4(OmgAOmgAt, Omg, C, frobA, k) # returns eigenvalues/vectors
+            tau = np.minimum( tau_old, tau )
+            tau_D = ApproximateRidgeScores4(OmgAOmgAt, Omg, D, frobA, k, U=U, eig=eig)[0]
             for j in range(t):
                 if IC[j] != -1:
                     prob_rej = 1.0 - tau[j] / tau_old[j]
@@ -390,6 +389,27 @@ def ApproximateRidgeScores3(OmgAOmgAT, Omg, M, frobA, k):
 
     return tau
 
+def ApproximateRidgeScores4(OmgAOmgAT, Omg, M, frobA, k, U=None, eig=None):
+    """
+    Use random projected sketch to compute ridge leverage scores, better implementation to handle larger time steps
+    """
+    _, t = np.shape(M)
+    tau = np.zeros((t))
+
+    if (U is None) or (eig is None):
+        U, eig, _ = sla.svd(OmgAOmgAT, full_matrices=False)  # a little m x m SVD
+
+    #UtOmgM = U.T @ Omg @ M
+    UtOmgM = np.linalg.multi_dot( [U.T, Omg, M] )  # selects best order of parenthesis, depending on the sizes
+
+    BkF2 = np.sum(eig[1:k])
+    kernel = np.diag(1 / (eig + (frobA - BkF2) / k))
+
+    for i in range(t):
+        m = UtOmgM[:, i]
+        tau[i] = 4.0 * m.T.dot(kernel).dot(m)
+
+    return tau, U, eig
 
 def parse_args():
     parser = argparse.ArgumentParser()
